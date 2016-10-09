@@ -8,4 +8,4 @@ ENV KK_ARGS --remote
 
 EXPOSE 87
 
-CMD kk-go $KK_NAME --local 0.0.0.0:87 $KK_ARGS
+CMD kk-route $KK_NAME --local 0.0.0.0:87 $KK_ARGS
