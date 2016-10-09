@@ -2,6 +2,8 @@ FROM alpine:latest
 
 COPY ./kk-route /bin/kk-route
 
+RUN chmod +x /bin/kk-route
+
 ENV KK_NAME kk.
 
 ENV KK_ARGS --remote
