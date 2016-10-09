@@ -1,6 +1,6 @@
 FROM alpine:latest
 
-COPY ./kk-route /bin/kk-route
+COPY ./main /bin/kk-route
 
 RUN chmod +x /bin/kk-route
 
