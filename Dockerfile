@@ -1,5 +1,7 @@
 FROM alpine:latest
 
+RUN echo "Asia/shanghai" >> /etc/timezone
+
 COPY ./main /bin/kk-route
 
 RUN chmod +x /bin/kk-route

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/aarzilli/golua/lua"
 	"github.com/kkserver/kk-lib/kk"
 	"log"
 	"os"
@@ -12,7 +13,51 @@ import (
 const VERSION = "1.0.0"
 
 func help() {
-	log.Println("kk-route <name> [--local 0.0.0.0:8080] [--remote 127.0.0.1:8090] [--maxconnections 204800]")
+	log.Println("kk-route <name> [--local 0.0.0.0:8080] [--remote 127.0.0.1:8090] [--maxconnections 204800] [--lua luafile]")
+}
+
+func NewMessageFunction(L *lua.State) int {
+
+	var v = kk.Message{}
+
+	var n = L.GetTop()
+
+	if n > 0 {
+		v.Method = L.ToString(-n)
+	}
+
+	if n > 1 {
+		v.From = L.ToString(-n + 1)
+	}
+
+	if n > 2 {
+		v.To = L.ToString(-n + 2)
+	}
+
+	if n > 3 {
+		v.Type = L.ToString(-n + 3)
+	}
+
+	if n > 4 {
+		v.Content = []byte(L.ToString(-n + 4))
+	}
+
+	L.PushGoStruct(&v)
+
+	return 1
+}
+
+func OpenLibs(L *lua.State) {
+
+	L.NewTable()
+
+	L.PushString("NewMessage")
+	L.PushGoFunction(NewMessageFunction)
+
+	L.RawSet(-3)
+
+	L.SetGlobal("kk")
+
 }
 
 func main() {
@@ -22,6 +67,7 @@ func main() {
 	var remoteAddr string = ""
 	var localAddr string = ""
 	var maxconnections int = 204800
+	var luaFile string = ""
 
 	if len(args) > 1 {
 		name = args[1]
@@ -55,9 +101,39 @@ func main() {
 			} else {
 				break
 			}
+		} else if args[i] == "--lua" {
+			if i+1 < len(args) {
+				luaFile = args[i+1]
+				i += 1
+			} else {
+				break
+			}
 		}
 
 		i += 1
+	}
+
+	var L *lua.State = nil
+
+	defer L.Close()
+
+	{
+		if luaFile != "" {
+
+			L = lua.NewState()
+
+			defer L.Close()
+
+			L.OpenLibs()
+
+			OpenLibs(L)
+
+			err := L.DoFile(luaFile)
+
+			if err != nil {
+				log.Panicln("[FAIL][LUA] ", err)
+			}
+		}
 	}
 
 	var remote *kk.TCPClient = nil
@@ -66,15 +142,20 @@ func main() {
 	var server_start func() = nil
 
 	remote_connect = func() {
+
 		log.Println("remote connect ...")
+
 		remote = kk.NewTCPClient(name, remoteAddr, nil)
+
 		remote.OnConnected = func() {
 			log.Println("remote: " + remote.Address())
 		}
+
 		remote.OnDisconnected = func(err error) {
 			log.Println("remote disconnected: " + remote.Address())
 			kk.GetDispatchMain().AsyncDelay(remote_connect, time.Second)
 		}
+
 		remote.OnMessage = func(message *kk.Message) {
 			if server != nil {
 				server.Send(message, remote)
@@ -113,7 +194,28 @@ func main() {
 			if strings.HasPrefix(message.To, name) {
 				server.Send(message, from)
 			} else if remote != nil {
-				remote.Send(message, nil)
+				if L != nil {
+					L.GetGlobal("OnMessage")
+					if L.IsFunction(-1) {
+						L.PushGoStruct(message)
+						L.PushGoStruct(from)
+						L.PushGoStruct(server)
+						err := L.Call(2, 1)
+						if err != nil {
+							log.Println("[FAIL][LUA] ", err)
+							var m = kk.Message{"DONE", name, message.From, "text", []byte(message.Method)}
+							from.Send(&m, nil)
+						} else if L.IsBoolean(-1) && L.ToBoolean(-1) {
+							remote.Send(message, nil)
+						} else {
+							var m = kk.Message{"DONE", name, message.From, "text", []byte(message.Method)}
+							from.Send(&m, nil)
+						}
+					}
+					L.Pop(L.GetTop())
+				} else {
+					remote.Send(message, nil)
+				}
 			}
 		}
 	}
