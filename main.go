@@ -200,7 +200,7 @@ func main() {
 						L.PushGoStruct(message)
 						L.PushGoStruct(from)
 						L.PushGoStruct(server)
-						err := L.Call(2, 1)
+						err := L.Call(3, 1)
 						if err != nil {
 							log.Println("[FAIL][LUA] ", err)
 							var m = kk.Message{"DONE", name, message.From, "text", []byte(message.Method)}

@@ -4,5 +4,5 @@ function OnMessage( message, from )
 	print(kk)
 	print(kk.NewMessage)
 	print(kk.NewMessage("DONE"))
-	return false
+	return message.To == "kk.job.job/slave/process"
 end
