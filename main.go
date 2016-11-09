@@ -62,6 +62,8 @@ func OpenLibs(L *lua.State) {
 
 func main() {
 
+	log.SetFlags(log.Llongfile | log.LstdFlags)
+
 	var args = os.Args
 	var name string = ""
 	var remoteAddr string = ""
