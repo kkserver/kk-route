@@ -6,8 +6,6 @@ COPY ./main /bin/kk-route
 
 RUN chmod +x /bin/kk-route
 
-RUN mkdir /lib
-
 RUN mkdir /lib/lua
 
 COPY ./config /config
