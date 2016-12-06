@@ -163,8 +163,13 @@ func main() {
 
 		server.OnAccept = func(client *kk.TCPClient) {
 			log.Println("accept: " + client.Address())
+		}
+
+		server.OnConnected = func(client *kk.TCPClient) {
+			log.Println("connected: " + client.Address() + " name:" + client.Name())
 
 			if route.Ping != "" {
+
 				var v = kk.Message{}
 				v.Method = "PING"
 				v.From = client.Name()
