@@ -3,18 +3,15 @@ package main
 import (
 	"github.com/aarzilli/golua/lua"
 	"github.com/kkserver/kk-lib/kk"
+	"github.com/kkserver/kk-lib/kk/inifile"
+	"github.com/kkserver/kk-lib/kk/json"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
 
 const VERSION = "1.0.0"
-
-func help() {
-	log.Println("kk-route <name> [--local 0.0.0.0:8080] [--remote 127.0.0.1:8090] [--maxconnections 204800] [--lua luafile]")
-}
 
 func NewMessageFunction(L *lua.State) int {
 
@@ -60,59 +57,37 @@ func OpenLibs(L *lua.State) {
 
 }
 
+type Route struct {
+	Name           string
+	Address        string
+	Remote         string
+	MaxConnections int
+	LuaFile        string
+	Ping           string
+}
+
 func main() {
 
 	log.SetFlags(log.Llongfile | log.LstdFlags)
 
-	var args = os.Args
-	var name string = ""
-	var remoteAddr string = ""
-	var localAddr string = ""
-	var maxconnections int = 204800
-	var luaFile string = ""
+	env := "./config/env.ini"
 
-	if len(args) > 1 {
-		name = args[1]
-	} else {
-		help()
-		return
+	if len(os.Args) > 1 {
+		env = os.Args[1]
 	}
 
-	var i = 2
+	var route = Route{}
 
-	for i < len(args) {
+	err := inifile.DecodeFile(&route, "./app.ini")
 
-		if args[i] == "--local" {
-			if i+1 < len(args) {
-				localAddr = args[i+1]
-				i += 1
-			} else {
-				break
-			}
-		} else if args[i] == "--remote" {
-			if i+1 < len(args) {
-				remoteAddr = args[i+1]
-				i += 1
-			} else {
-				break
-			}
-		} else if args[i] == "--maxconnections" {
-			if i+1 < len(args) {
-				maxconnections, _ = strconv.Atoi(args[i+1])
-				i += 1
-			} else {
-				break
-			}
-		} else if args[i] == "--lua" {
-			if i+1 < len(args) {
-				luaFile = args[i+1]
-				i += 1
-			} else {
-				break
-			}
-		}
+	if err != nil {
+		log.Panicln(err)
+	}
 
-		i += 1
+	err = inifile.DecodeFile(&route, env)
+
+	if err != nil {
+		log.Panicln(err)
 	}
 
 	var L *lua.State = nil
@@ -120,7 +95,7 @@ func main() {
 	defer L.Close()
 
 	{
-		if luaFile != "" {
+		if route.LuaFile != "" {
 
 			L = lua.NewState()
 
@@ -130,7 +105,7 @@ func main() {
 
 			OpenLibs(L)
 
-			err := L.DoFile(luaFile)
+			err := L.DoFile(route.LuaFile)
 
 			if err != nil {
 				log.Panicln("[FAIL][LUA] ", err)
@@ -147,7 +122,7 @@ func main() {
 
 		log.Println("remote connect ...")
 
-		remote = kk.NewTCPClient(name, remoteAddr, nil)
+		remote = kk.NewTCPClient(route.Name, route.Remote, nil)
 
 		remote.OnConnected = func() {
 			log.Println("remote: " + remote.Address())
@@ -165,7 +140,7 @@ func main() {
 		}
 	}
 
-	if remoteAddr != "" {
+	if route.Remote != "" {
 		remote_connect()
 	}
 
@@ -173,7 +148,7 @@ func main() {
 
 		log.Println("server start ...")
 
-		server = kk.NewTCPServer(name, localAddr, maxconnections)
+		server = kk.NewTCPServer(route.Name, route.Address, route.MaxConnections)
 
 		server.OnStart = func() {
 			log.Println(server.Address())
@@ -186,14 +161,42 @@ func main() {
 
 		server.OnAccept = func(client *kk.TCPClient) {
 			log.Println("accept: " + client.Address())
+
+			if route.Ping != "" {
+				var v = kk.Message{}
+				v.Method = "PING"
+				v.From = client.Name()
+				v.To = route.Ping
+				v.Type = "text/json"
+				v.Content, _ = json.Encode(map[string]interface{}{"address": client.Address(), "options": client.Options()})
+
+				kk.GetDispatchMain().Async(func() {
+					server.OnMessage(&v, nil)
+					log.Println(v.String())
+				})
+
+			}
+
 		}
 
 		server.OnDisconnected = func(client *kk.TCPClient, err error) {
 			log.Println("disconnected: " + client.Address() + " error: " + err.Error())
+
+			if route.Ping != "" {
+				var v = kk.Message{}
+				v.Method = "PING.DISCONNECTED"
+				v.From = client.Name()
+				v.To = route.Ping
+				v.Type = "text/json"
+				v.Content, _ = json.Encode(map[string]interface{}{"address": client.Address(), "options": client.Options()})
+				server.OnMessage(&v, client)
+				log.Println(v.String())
+			}
+
 		}
 
 		server.OnMessage = func(message *kk.Message, from kk.INeuron) {
-			if strings.HasPrefix(message.To, name) {
+			if strings.HasPrefix(message.To, route.Name) {
 				server.Send(message, from)
 			} else if remote != nil {
 				if L != nil {
@@ -205,12 +208,12 @@ func main() {
 						err := L.Call(3, 1)
 						if err != nil {
 							log.Println("[FAIL][LUA] ", err)
-							var m = kk.Message{"DONE", name, message.From, "text", []byte(message.Method)}
+							var m = kk.Message{"DONE", route.Name, message.From, "text", []byte(message.Method)}
 							from.Send(&m, nil)
 						} else if L.IsBoolean(-1) && L.ToBoolean(-1) {
 							remote.Send(message, nil)
 						} else {
-							var m = kk.Message{"DONE", name, message.From, "text", []byte(message.Method)}
+							var m = kk.Message{"DONE", route.Name, message.From, "text", []byte(message.Method)}
 							from.Send(&m, nil)
 						}
 					}
@@ -222,7 +225,7 @@ func main() {
 		}
 	}
 
-	if localAddr != "" {
+	if route.Address != "" {
 		server_start()
 	}
 

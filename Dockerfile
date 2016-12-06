@@ -6,12 +6,13 @@ COPY ./main /bin/kk-route
 
 RUN chmod +x /bin/kk-route
 
-ENV KK_NAME kk.
+COPY ./config /config
 
-ENV KK_ARGS --remote
+COPY ./app.ini /app.ini
 
-VOLUME /lib/lua
+ENV KK_ENV_CONFIG /config/env.ini
 
-EXPOSE 87
+VOLUME /config
 
-CMD kk-route $KK_NAME --local 0.0.0.0:87 $KK_ARGS
+CMD kk-route $KK_ENV_CONFIG
+
