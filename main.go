@@ -70,6 +70,8 @@ func main() {
 
 	log.SetFlags(log.Llongfile | log.LstdFlags)
 
+	log.Printf("VERSION: %s\n", VERSION)
+
 	env := "./config/env.ini"
 
 	if len(os.Args) > 1 {
@@ -172,7 +174,6 @@ func main() {
 
 				kk.GetDispatchMain().Async(func() {
 					server.OnMessage(&v, nil)
-					log.Println(v.String())
 				})
 
 			}
@@ -189,8 +190,11 @@ func main() {
 				v.To = route.Ping
 				v.Type = "text/json"
 				v.Content, _ = json.Encode(map[string]interface{}{"address": client.Address(), "options": client.Options()})
-				server.OnMessage(&v, client)
-				log.Println(v.String())
+
+				kk.GetDispatchMain().Async(func() {
+					server.OnMessage(&v, nil)
+				})
+
 			}
 
 		}
