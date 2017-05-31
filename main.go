@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/aarzilli/golua/lua"
 	"github.com/kkserver/kk-lib/kk"
 	"github.com/kkserver/kk-lib/kk/inifile"
 	"github.com/kkserver/kk-lib/kk/json"
+	"github.com/kkserver/kk-lua/lua"
 	"log"
 	"os"
 	"strings"
@@ -39,7 +39,7 @@ func NewMessageFunction(L *lua.State) int {
 		v.Content = []byte(L.ToString(-n + 4))
 	}
 
-	L.PushGoStruct(&v)
+	L.PushObject(&v)
 
 	return 1
 }
@@ -49,7 +49,7 @@ func OpenLibs(L *lua.State) {
 	L.NewTable()
 
 	L.PushString("NewMessage")
-	L.PushGoFunction(NewMessageFunction)
+	L.PushFunction(NewMessageFunction)
 
 	L.RawSet(-3)
 
@@ -103,15 +103,22 @@ func main() {
 
 			defer L.Close()
 
-			L.OpenLibs()
+			L.Openlibs()
 
 			OpenLibs(L)
 
-			err := L.DoFile(route.LuaFile)
+			if L.LoadFile(route.LuaFile) == 0 {
 
-			if err != nil {
-				log.Panicln("[FAIL][LUA] ", err)
+				if L.Call(0, 0) != 0 {
+					log.Panicln(L.ToString(-1))
+					L.Pop(1)
+				}
+
+			} else {
+				log.Panicln(L.ToString(-1))
+				L.Pop(1)
 			}
+
 		}
 	}
 
@@ -211,12 +218,11 @@ func main() {
 				if L != nil {
 					L.GetGlobal("OnMessage")
 					if L.IsFunction(-1) {
-						L.PushGoStruct(message)
-						L.PushGoStruct(from)
-						L.PushGoStruct(server)
-						err := L.Call(3, 1)
-						if err != nil {
-							log.Println("[FAIL][LUA] ", err)
+						L.PushObject(message)
+						L.PushObject(from)
+						L.PushObject(server)
+						if L.Call(3, 1) != 0 {
+							log.Println("[FAIL][LUA] ", L.ToString(-1))
 							var m = kk.Message{"DONE", route.Name, message.From, "text", []byte(message.Method)}
 							from.Send(&m, nil)
 						} else if L.IsBoolean(-1) && L.ToBoolean(-1) {
